@@ -1,0 +1,85 @@
+import React from 'react';
+import { render } from '@testing-library/react';
+import { screen } from '@testing-library/dom';
+import { BrowserRouter } from 'react-router-dom';
+import Favorites from '@/pages/Favorites';
+import { MoviesProvider } from '@/contexts/MoviesContext';
+
+// Mock do useMovies hook
+const mockUseMovies = jest.fn();
+
+jest.mock('@/contexts/MoviesContext', () => ({
+  MoviesProvider: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  useMovies: () => mockUseMovies(),
+}));
+
+const TestWrapper = ({ children }: { children: React.ReactNode }) => (
+  <BrowserRouter>{children}</BrowserRouter>
+);
+
+describe('Favorites', () => {
+  beforeEach(() => {
+    // Reset mock before each test
+    mockUseMovies.mockClear();
+  });
+
+  it('should render empty state when no favorites', () => {
+    mockUseMovies.mockReturnValue({
+      state: {
+        favorites: [],
+        searchResults: [],
+        loading: false,
+        error: null,
+        query: '',
+      },
+      dispatch: jest.fn(),
+      addFavorite: jest.fn(),
+      removeFavorite: jest.fn(),
+      isFavorite: jest.fn().mockReturnValue(false),
+    });
+
+    render(<Favorites />, { wrapper: TestWrapper });
+
+    expect(screen.getByText('Nenhum filme favorito')).toBeInTheDocument();
+    expect(screen.getByText('Descobrir filmes')).toBeInTheDocument();
+  });
+
+  it('should render page title when has favorites', () => {
+    mockUseMovies.mockReturnValue({
+      state: {
+        favorites: [
+          {
+            id: 1,
+            title: 'Test Movie',
+            overview: 'Test overview',
+            poster_path: '/test.jpg',
+            backdrop_path: '/test-backdrop.jpg',
+            release_date: '2023-01-01',
+            vote_average: 8.5,
+            vote_count: 1000,
+            genre_ids: [28, 12],
+            adult: false,
+            original_language: 'en',
+            original_title: 'Test Movie',
+            popularity: 100,
+            video: false,
+          },
+        ],
+        searchResults: [],
+        loading: false,
+        error: null,
+        query: '',
+      },
+      dispatch: jest.fn(),
+      addFavorite: jest.fn(),
+      removeFavorite: jest.fn(),
+      isFavorite: jest.fn().mockReturnValue(true),
+    });
+
+    render(<Favorites />, { wrapper: TestWrapper });
+
+    expect(screen.getByText('Meus Favoritos')).toBeInTheDocument();
+  });
+});

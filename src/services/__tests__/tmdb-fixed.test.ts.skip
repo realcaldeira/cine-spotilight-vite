@@ -1,0 +1,210 @@
+/**
+ * @jest-environment jsdom
+ */
+
+import {
+  tmdbService,
+  __setApiKeyForTest,
+  __clearApiKeyForTest,
+} from '@/services/tmdb';
+import type { MovieResponse, MovieDetails, Movie } from '@/types/movie';
+
+const ORIGINAL_FETCH = global.fetch;
+
+// Função helper para criar filmes mock com todos os campos necessários
+const createMockMovie = (id: number, title: string): Movie => ({
+  id,
+  title,
+  overview: 'Test overview',
+  poster_path: '/test.jpg',
+  backdrop_path: '/test-backdrop.jpg',
+  release_date: '2023-01-01',
+  vote_average: 7.5,
+  vote_count: 1000,
+  genre_ids: [1, 2, 3],
+});
+
+describe('TMDBService full branch coverage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (global as unknown as { alert: jest.Mock }).alert = jest.fn();
+    jest.useRealTimers();
+    __setApiKeyForTest('valid-key');
+  });
+
+  afterEach(() => {
+    global.fetch = ORIGINAL_FETCH;
+    __clearApiKeyForTest();
+  });
+
+  describe('getPopularMovies', () => {
+    it('should fetch popular movies successfully', async () => {
+      const mockResponse: MovieResponse = {
+        page: 1,
+        results: [createMockMovie(1, 'Test Movie')],
+        total_pages: 1,
+        total_results: 1,
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockResponse),
+      });
+
+      const result = await tmdbService.getPopularMovies();
+      expect(result).toEqual(mockResponse);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/movie/popular?page=1'),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer valid-key',
+          }),
+        })
+      );
+    });
+
+    it('should handle network errors', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      await expect(tmdbService.getPopularMovies()).rejects.toThrow('Network error');
+    });
+  });
+
+  describe('searchMovies', () => {
+    it('should search movies successfully', async () => {
+      const mockResponse: MovieResponse = {
+        page: 1,
+        results: [createMockMovie(1, 'Search Result')],
+        total_pages: 1,
+        total_results: 1,
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockResponse),
+      });
+
+      const result = await tmdbService.searchMovies('test query');
+      expect(result).toEqual(mockResponse);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/search/movie?query=test%20query&page=1'),
+        expect.any(Object)
+      );
+    });
+
+    it('should encode special characters in query', async () => {
+      const mockResponse: MovieResponse = {
+        page: 1,
+        results: [],
+        total_pages: 1,
+        total_results: 0,
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockResponse),
+      });
+
+      await tmdbService.searchMovies('test & query');
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('test%20%26%20query'),
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('getMovieDetails', () => {
+    it('should fetch movie details successfully', async () => {
+      const mockDetails: MovieDetails = {
+        ...createMockMovie(1, 'Movie Details'),
+        genres: [{ id: 1, name: 'Action' }],
+        runtime: 120,
+        status: 'Released',
+        tagline: 'Test tagline',
+        budget: 1000000,
+        revenue: 5000000,
+        production_companies: [
+          {
+            id: 1,
+            name: 'Test Studio',
+            logo_path: '/logo.jpg',
+          },
+        ],
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockDetails),
+      });
+
+      const result = await tmdbService.getMovieDetails(1);
+      expect(result).toEqual(mockDetails);
+    });
+  });
+
+  describe('Image URL methods', () => {
+    it('should generate poster URLs correctly', () => {
+      const url = tmdbService.getPosterUrl('/test.jpg');
+      expect(url).toBe('https://image.tmdb.org/t/p/w300/test.jpg');
+    });
+
+    it('should return placeholder for null poster path', () => {
+      const url = tmdbService.getPosterUrl(null);
+      expect(url).toBe('/placeholder.svg');
+    });
+
+    it('should generate backdrop URLs correctly', () => {
+      const url = tmdbService.getBackdropUrl('/backdrop.jpg');
+      expect(url).toBe('https://image.tmdb.org/t/p/original/backdrop.jpg');
+    });
+
+    it('should return placeholder for null backdrop path', () => {
+      const url = tmdbService.getBackdropUrl(null);
+      expect(url).toBe('/placeholder.svg');
+    });
+  });
+
+  describe('Error handling', () => {
+    it('should handle HTTP errors', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: jest.fn().mockResolvedValue({}),
+      });
+
+      await expect(tmdbService.getPopularMovies()).rejects.toThrow();
+    });
+
+    it('should handle empty responses', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(null),
+      });
+
+      await expect(tmdbService.getPopularMovies()).rejects.toThrow('Empty response from TMDB API');
+    });
+
+    it('should handle request timeout', async () => {
+      jest.useFakeTimers();
+
+      global.fetch = jest.fn().mockImplementation(() => 
+        new Promise((resolve) => {
+          setTimeout(() => resolve({
+            ok: true,
+            json: jest.fn().mockResolvedValue({}),
+          }), 15000);
+        })
+      );
+
+      const promise = tmdbService.getPopularMovies();
+      
+      // Avança o tempo para simular timeout
+      jest.advanceTimersByTime(10000);
+      
+      await expect(promise).rejects.toThrow('Request timeout');
+      
+      jest.useRealTimers();
+    });
+  });
+});

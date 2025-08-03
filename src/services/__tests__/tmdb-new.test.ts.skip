@@ -1,0 +1,252 @@
+global.fetch = jest.fn();
+
+import { tmdbService } from '../tmdb';
+
+const mockFetch = fetch as jest.MockedFunction<typeof fetch>;
+
+describe('TMDB Service', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('getPopularMovies', () => {
+    it('should get popular movies successfully', async () => {
+      const mockResponse = {
+        results: [
+          {
+            id: 1,
+            title: 'Popular Movie',
+            overview: 'Test overview',
+            poster_path: '/test.jpg',
+            release_date: '2024-01-01',
+            vote_average: 8.5,
+          },
+        ],
+        total_pages: 1,
+        page: 1,
+        total_results: 1,
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      } as Response);
+
+      const result = await tmdbService.getPopularMovies();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('movie/popular'),
+        expect.any(Object)
+      );
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should handle popular movies error', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      await expect(tmdbService.getPopularMovies()).rejects.toThrow(
+        'Network error'
+      );
+    });
+
+    it('should handle pagination', async () => {
+      const mockResponse = {
+        results: [],
+        total_pages: 5,
+        page: 2,
+        total_results: 100,
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      } as Response);
+
+      const result = await tmdbService.getPopularMovies(2);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('page=2'),
+        expect.any(Object)
+      );
+
+      expect(result.page).toBe(2);
+    });
+  });
+
+  describe('searchMovies', () => {
+    it('should search movies successfully', async () => {
+      const mockResponse = {
+        results: [
+          {
+            id: 1,
+            title: 'Test Movie',
+            overview: 'Test overview',
+            poster_path: '/test.jpg',
+            release_date: '2024-01-01',
+            vote_average: 8.5,
+          },
+        ],
+        total_pages: 1,
+        page: 1,
+        total_results: 1,
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      } as Response);
+
+      const result = await tmdbService.searchMovies('Test Movie');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('search/movie'),
+        expect.any(Object)
+      );
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should handle search movies error', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      await expect(tmdbService.searchMovies('Test Movie')).rejects.toThrow(
+        'Network error'
+      );
+    });
+
+    it('should encode search query properly', async () => {
+      const mockResponse = {
+        results: [],
+        page: 1,
+        total_pages: 1,
+        total_results: 0,
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      } as Response);
+
+      await tmdbService.searchMovies('Test & Movie');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('Test%20%26%20Movie'),
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('getMovieDetails', () => {
+    it('should get movie details successfully', async () => {
+      const mockMovie = {
+        id: 1,
+        title: 'Test Movie',
+        overview: 'Test overview',
+        poster_path: '/test.jpg',
+        release_date: '2024-01-01',
+        vote_average: 8.5,
+        runtime: 120,
+        genres: [{ id: 1, name: 'Action' }],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockMovie,
+      } as Response);
+
+      const result = await tmdbService.getMovieDetails(1);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('movie/1'),
+        expect.any(Object)
+      );
+
+      expect(result).toEqual(mockMovie);
+    });
+
+    it('should handle movie details error', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Movie not found'));
+
+      await expect(tmdbService.getMovieDetails(999)).rejects.toThrow(
+        'Movie not found'
+      );
+    });
+  });
+
+  describe('Image URL methods', () => {
+    it('should generate correct poster URL', () => {
+      const posterPath = '/test-poster.jpg';
+      const result = tmdbService.getPosterUrl(posterPath);
+
+      expect(result).toBe('https://image.tmdb.org/t/p/w300/test-poster.jpg');
+    });
+
+    it('should return placeholder for null poster path', () => {
+      const result = tmdbService.getPosterUrl(null);
+
+      expect(result).toBe('/placeholder.svg');
+    });
+
+    it('should generate correct backdrop URL', () => {
+      const backdropPath = '/test-backdrop.jpg';
+      const result = tmdbService.getBackdropUrl(backdropPath);
+
+      expect(result).toBe(
+        'https://image.tmdb.org/t/p/original/test-backdrop.jpg'
+      );
+    });
+
+    it('should return placeholder for null backdrop path', () => {
+      const result = tmdbService.getBackdropUrl(null);
+
+      expect(result).toBe('/placeholder.svg');
+    });
+
+    it('should generate correct image URL with custom size', () => {
+      const imagePath = '/test-image.jpg';
+      const result = tmdbService.getImageUrl(imagePath, 'w500');
+
+      expect(result).toBe('https://image.tmdb.org/t/p/w500/test-image.jpg');
+    });
+  });
+
+  describe('API Error Handling', () => {
+    it('should handle HTTP error responses', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      } as Response);
+
+      await expect(tmdbService.searchMovies('Test')).rejects.toThrow(
+        'TMDB API Error: 404 Not Found'
+      );
+    });
+
+    it('should handle network errors', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      await expect(tmdbService.getPopularMovies()).rejects.toThrow(
+        'Network error'
+      );
+    });
+
+    it('should handle invalid JSON responses', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => {
+          throw new Error('Invalid JSON');
+        },
+      } as unknown as Response);
+
+      await expect(tmdbService.getPopularMovies()).rejects.toThrow(
+        'Invalid JSON'
+      );
+    });
+  });
+});

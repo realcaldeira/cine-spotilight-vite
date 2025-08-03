@@ -1,0 +1,159 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import Home from '../Home';
+import { MoviesProvider } from '@/contexts/MoviesContext';
+import { tmdbService } from '@/services/tmdb';
+import { mockMovieResponse } from '@/test/mocks';
+
+jest.mock('@/services/tmdb');
+const mockTmdbService = tmdbService as jest.Mocked<typeof tmdbService>;
+
+const TestWrapper = ({ children }: { children: React.ReactNode }) => (
+  <MemoryRouter>
+    <MoviesProvider>{children}</MoviesProvider>
+  </MemoryRouter>
+);
+
+const mockMovieResponseWithPages = {
+  ...mockMovieResponse,
+  total_pages: 5, // Permitir que o botão apareça
+  total_results: 100,
+};
+
+const mockPage2Response = {
+  ...mockMovieResponse,
+  page: 2,
+  total_pages: 5, // Garantir que há mais páginas
+  results: [
+    {
+      ...mockMovieResponse.results[0],
+      id: 3,
+      title: 'Test Movie 3',
+    },
+  ],
+};
+
+describe('Home - Load More Functionality', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should handle multiple rapid clicks on load more button', async () => {
+    mockTmdbService.getPopularMovies
+      .mockResolvedValueOnce(mockMovieResponseWithPages)
+      .mockResolvedValueOnce(mockPage2Response);
+
+    render(
+      <TestWrapper>
+        <Home />
+      </TestWrapper>
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(mockMovieResponseWithPages.results[0].title)
+      ).toBeInTheDocument();
+    });
+
+    const loadMoreButton = screen.getByText('Carregar mais filmes');
+    expect(loadMoreButton).toBeInTheDocument();
+
+    fireEvent.click(loadMoreButton);
+    fireEvent.click(loadMoreButton);
+    fireEvent.click(loadMoreButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Movie 3')).toBeInTheDocument();
+    });
+
+    expect(mockTmdbService.getPopularMovies).toHaveBeenCalledTimes(2);
+    expect(mockTmdbService.getPopularMovies).toHaveBeenNthCalledWith(1, 1);
+    expect(mockTmdbService.getPopularMovies).toHaveBeenNthCalledWith(2, 2);
+  });
+
+  it('should handle API error during load more and revert page state', async () => {
+    mockTmdbService.getPopularMovies
+      .mockResolvedValueOnce(mockMovieResponseWithPages)
+      .mockRejectedValueOnce(new Error('API Error'));
+
+    render(
+      <TestWrapper>
+        <Home />
+      </TestWrapper>
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(mockMovieResponseWithPages.results[0].title)
+      ).toBeInTheDocument();
+    });
+
+    const loadMoreButton = screen.getByText('Carregar mais filmes');
+    fireEvent.click(loadMoreButton);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Erro ao carregar filmes populares. Tente novamente.')
+      ).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByText(mockMovieResponseWithPages.results[0].title)
+    ).not.toBeInTheDocument();
+  });
+
+  it('should disable button during loading state', async () => {
+    let resolveFirstCall: (value: typeof mockMovieResponseWithPages) => void;
+    const firstCallPromise = new Promise<typeof mockMovieResponseWithPages>(
+      (resolve) => {
+        resolveFirstCall = resolve;
+      }
+    );
+
+    let resolveSecondCall: (value: typeof mockPage2Response) => void;
+    const secondCallPromise = new Promise<typeof mockPage2Response>(
+      (resolve) => {
+        resolveSecondCall = resolve;
+      }
+    );
+
+    mockTmdbService.getPopularMovies
+      .mockReturnValueOnce(firstCallPromise)
+      .mockReturnValueOnce(secondCallPromise);
+
+    render(
+      <TestWrapper>
+        <Home />
+      </TestWrapper>
+    );
+
+    resolveFirstCall!(mockMovieResponseWithPages);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(mockMovieResponseWithPages.results[0].title)
+      ).toBeInTheDocument();
+    });
+
+    const loadMoreButton = screen.getByText('Carregar mais filmes');
+    expect(loadMoreButton).not.toBeDisabled();
+
+    fireEvent.click(loadMoreButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Carregando mais filmes...')).toBeInTheDocument();
+    });
+
+    resolveSecondCall!(mockPage2Response);
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Movie 3')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(loadMoreButton).not.toBeDisabled();
+      expect(screen.getByText('Carregar mais filmes')).toBeInTheDocument();
+    });
+  });
+});

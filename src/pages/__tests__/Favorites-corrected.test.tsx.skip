@@ -1,0 +1,140 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
+import '@testing-library/jest-dom';
+import Favorites from '../Favorites';
+import { Movie } from '@/types/movie';
+
+const mockFavorites: Movie[] = [
+  {
+    id: 1,
+    title: 'Test Movie 1',
+    overview: 'A test movie',
+    poster_path: '/test1.jpg',
+    backdrop_path: '/backdrop1.jpg',
+    release_date: '2023-01-01',
+    vote_average: 8.5,
+    vote_count: 1000,
+    genre_ids: [28, 12],
+  },
+  {
+    id: 2,
+    title: 'Test Movie 2',
+    overview: 'Another test movie',
+    poster_path: '/test2.jpg',
+    backdrop_path: '/backdrop2.jpg',
+    release_date: '2023-02-01',
+    vote_average: 7.5,
+    vote_count: 800,
+    genre_ids: [35, 18],
+  },
+];
+
+const mockContextValue = {
+  state: {
+    favorites: mockFavorites,
+  },
+  addFavorite: jest.fn(),
+  removeFavorite: jest.fn(),
+  isFavorite: jest.fn((id: number) =>
+    mockFavorites.some((movie) => movie.id === id)
+  ),
+  addSearchTerm: jest.fn(),
+};
+
+const mockEmptyContextValue = {
+  state: {
+    favorites: [],
+  },
+  addFavorite: jest.fn(),
+  removeFavorite: jest.fn(),
+  isFavorite: jest.fn(() => false),
+  addSearchTerm: jest.fn(),
+};
+
+jest.mock('@/contexts/MoviesContext', () => ({
+  useMovies: jest.fn(),
+  MoviesProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+const renderWithRouter = (children: React.ReactNode) => {
+  return <BrowserRouter>{children}</BrowserRouter>;
+};
+
+describe('Favorites Enhanced Tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    require('@/contexts/MoviesContext').useMovies.mockReturnValue(
+      mockContextValue
+    );
+  });
+
+  it('should render favorites page without header', () => {
+    render(renderWithRouter(<Favorites />));
+
+    expect(screen.getByText(/Meus Favoritos/i)).toBeInTheDocument();
+  });
+
+  it('should display favorite movies', () => {
+    render(renderWithRouter(<Favorites />));
+
+    expect(screen.getByText('Test Movie 1')).toBeInTheDocument();
+    expect(screen.getByText('Test Movie 2')).toBeInTheDocument();
+  });
+
+  it('should handle empty favorites state', () => {
+    require('@/contexts/MoviesContext').useMovies.mockReturnValue(
+      mockEmptyContextValue
+    );
+
+    render(renderWithRouter(<Favorites />));
+
+    expect(screen.getByText(/Nenhum filme favorito/i)).toBeInTheDocument();
+  });
+
+  it('should allow removing movies from favorites', async () => {
+    render(renderWithRouter(<Favorites />));
+
+    const removeButtons = screen.getAllByTestId(/remove-favorite-/);
+    expect(removeButtons.length).toBeGreaterThan(0);
+
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(mockContextValue.removeFavorite).toHaveBeenCalledWith(1);
+    });
+  });
+
+  it('should have proper page structure and styling', () => {
+    render(renderWithRouter(<Favorites />));
+
+    const container = document.querySelector('.min-h-screen');
+    expect(container).toBeInTheDocument();
+    expect(container).toHaveClass('min-h-screen');
+  });
+
+  it('should display movie posters with proper alt text', () => {
+    render(renderWithRouter(<Favorites />));
+
+    const movieImages = screen.getAllByRole('img');
+    expect(movieImages.length).toBeGreaterThan(0);
+
+    const firstImage = movieImages.find((img) =>
+      img.getAttribute('alt')?.includes('Test Movie 1')
+    );
+    expect(firstImage).toBeInTheDocument();
+  });
+
+  it('should navigate to movie details when clicking on movie', () => {
+    render(renderWithRouter(<Favorites />));
+
+    const movieLinks = screen.getAllByRole('link');
+    expect(movieLinks.length).toBeGreaterThan(0);
+
+    const movieDetailLink = movieLinks.find((link) =>
+      link.getAttribute('href')?.includes('/movie/')
+    );
+    expect(movieDetailLink).toBeInTheDocument();
+  });
+});

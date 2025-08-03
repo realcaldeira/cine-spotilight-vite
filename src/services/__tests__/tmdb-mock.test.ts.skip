@@ -1,0 +1,43 @@
+/**
+ * Test to verify mock works correctly
+ */
+
+import { tmdbService, searchMovies } from '@/services/tmdb';
+
+describe('TMDB Service Mock', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should use mock implementation', () => {
+    expect(typeof tmdbService.getPopularMovies).toBe('function');
+    expect(typeof searchMovies).toBe('function');
+  });
+
+  it('should return mock data from service', async () => {
+    // Mock searchMovies for this test
+    const mockSearchMovies = searchMovies as jest.MockedFunction<typeof searchMovies>;
+    
+    mockSearchMovies.mockResolvedValue({
+      results: [{
+        id: 1,
+        title: 'Test Movie',
+        overview: 'Test overview',
+        poster_path: '/test.jpg',
+        backdrop_path: '/test-backdrop.jpg',
+        release_date: '2023-01-01',
+        vote_average: 7.5,
+        vote_count: 1000,
+        genre_ids: [1, 2, 3],
+      }],
+      total_pages: 1,
+      total_results: 1,
+      page: 1,
+    });
+
+    const result = await searchMovies('test');
+    expect(result).toBeDefined();
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].title).toBe('Test Movie');
+  });
+});

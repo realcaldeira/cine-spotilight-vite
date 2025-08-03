@@ -1,0 +1,341 @@
+import { render, waitFor, screen, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import Search from '@/pages/Search';
+import { tmdbService } from '@/services/tmdb';
+
+jest.mock('@/hooks/use-debounce', () => ({
+  useDebounce: (fn: (...args: any[]) => any) => fn,
+}));
+
+const mockAddSearchTerm = jest.fn();
+const mockUseMovies = {
+  state: { favorites: [], searchHistory: [] },
+  addFavorite: jest.fn(),
+  removeFavorite: jest.fn(),
+  isFavorite: jest.fn(() => false),
+  addSearchTerm: mockAddSearchTerm,
+};
+
+jest.mock('@/contexts/MoviesContext', () => ({
+  useMovies: () => mockUseMovies,
+  MoviesProvider: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+}));
+
+jest.mock('@/components/MovieCard', () => {
+  return function MovieCard({ movie, searchTerm }: any) {
+    return (
+      <div data-testid="movie-card">
+        {movie.title} - {searchTerm}
+      </div>
+    );
+  };
+});
+jest.mock('@/components/LoadingSpinner', () => ({
+  __esModule: true,
+  default: function LoadingSpinner() {
+    return <div data-testid="loading-spinner">spinner</div>;
+  },
+  LoadingGrid: () => <div data-testid="loading-grid">grid</div>,
+}));
+jest.mock('@/components/ErrorMessage', () => {
+  return function ErrorMessage({
+    message,
+    onRetry,
+    className,
+  }: {
+    message: string;
+    onRetry: () => void;
+    className?: string;
+  }) {
+    return (
+      <div data-testid="error-message">
+        <span>{message}</span>
+        <button onClick={onRetry}>Retry</button>
+      </div>
+    );
+  };
+});
+jest.mock('@/components/EmptyState', () => {
+  return function EmptyState({ title, description, actionText }: any) {
+    return (
+      <div data-testid="empty-state">
+        <div>{title}</div>
+        <div>{description}</div>
+        <div>{actionText}</div>
+      </div>
+    );
+  };
+});
+
+jest.mock('@/services/tmdb', () => ({
+  tmdbService: {
+    searchMovies: jest.fn(),
+    getPosterUrl: jest.fn(() => '/test.jpg'),
+  },
+}));
+
+const mockSearchMovies = tmdbService.searchMovies as jest.MockedFunction<
+  typeof tmdbService.searchMovies
+>;
+
+const renderWithRoute = (route = '/search') =>
+  render(<Search />, {
+    wrapper: ({ children }: any) => (
+      <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+    ),
+  });
+
+const makeMovie = (id: number, title: string) => ({
+  id,
+  title,
+  overview: 'desc',
+  poster_path: '/p.jpg',
+  release_date: '2023-01-01',
+  vote_average: 8,
+});
+
+describe('Search component - full coverage scenarios', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAddSearchTerm.mockClear();
+  });
+
+  it('shows empty state when there is no query param', async () => {
+    renderWithRoute('/search');
+    expect(screen.getByTestId('empty-state')).toBeInTheDocument();
+    expect(screen.getByText('Busque por filmes')).toBeInTheDocument();
+    expect(mockAddSearchTerm).not.toHaveBeenCalled();
+    expect(mockSearchMovies).not.toHaveBeenCalled();
+  });
+
+  it("shows 'Buscando...' and skeleton while initial search is pending", async () => {
+    let resolvePromise: any;
+    const pending = new Promise((res) => {
+      resolvePromise = res;
+    });
+    mockSearchMovies.mockImplementation(() => pending as any);
+    renderWithRoute('/search?q=loading');
+    expect(screen.getByTestId('loading-grid')).toBeInTheDocument();
+
+    await act(async () => {
+      resolvePromise({
+        results: [makeMovie(3, 'Movie C')],
+        total_pages: 1,
+        total_results: 1,
+        page: 1,
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('movie-card')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('loading-grid')).not.toBeInTheDocument();
+  });
+
+  it('performs search when query present and displays result singular', async () => {
+    mockSearchMovies.mockResolvedValue({
+      results: [makeMovie(1, 'Movie A')],
+      total_pages: 1,
+      total_results: 1,
+      page: 1,
+    } as any);
+    renderWithRoute('/search?q=test');
+    await waitFor(() => {
+      expect(mockAddSearchTerm).toHaveBeenCalledWith('test');
+    });
+
+    expect(
+      screen.getByText('1 resultado encontrado para', { exact: false })
+    ).toBeInTheDocument();
+    expect(screen.getByText('"test"')).toBeInTheDocument();
+    expect(screen.getByTestId('movie-card')).toHaveTextContent(
+      'Movie A - test'
+    );
+    expect(
+      screen.queryByRole('button', {
+        name: /Carregar mais resultados/i,
+      })
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows pluralization when multiple results', async () => {
+    mockSearchMovies.mockResolvedValue({
+      results: [makeMovie(1, 'Movie A'), makeMovie(2, 'Movie B')],
+      total_pages: 1,
+      total_results: 2,
+      page: 1,
+    } as any);
+    renderWithRoute('/search?q=foo');
+    await waitFor(() => {
+      expect(mockAddSearchTerm).toHaveBeenCalledWith('foo');
+    });
+
+    expect(
+      screen.getByText('2 resultados encontrados para', { exact: false })
+    ).toBeInTheDocument();
+    expect(screen.getByText('"foo"')).toBeInTheDocument();
+    expect(screen.getAllByTestId('movie-card')).toHaveLength(2);
+  });
+
+  it('shows empty search result state when query yields zero results', async () => {
+    mockSearchMovies.mockResolvedValue({
+      results: [],
+      total_pages: 1,
+      total_results: 0,
+      page: 1,
+    } as any);
+    renderWithRoute('/search?q=notfound');
+    await waitFor(() => {
+      expect(mockAddSearchTerm).toHaveBeenCalledWith('notfound');
+    });
+    expect(screen.getByTestId('empty-state')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Nenhum resultado encontrado para "notfound"/i)
+    ).toBeInTheDocument();
+  });
+
+  it('handles invalid response by showing error and allows retry', async () => {
+    mockSearchMovies.mockResolvedValueOnce({} as any);
+    renderWithRoute('/search?q=badresp');
+    await waitFor(() => {
+      expect(screen.getByTestId('error-message')).toBeInTheDocument();
+    });
+    mockSearchMovies.mockResolvedValueOnce({
+      results: [makeMovie(4, 'Recovered Movie')],
+      total_pages: 1,
+      total_results: 1,
+      page: 1,
+    } as any);
+    userEvent.click(screen.getByRole('button', { name: /Retry/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('movie-card')).toHaveTextContent(
+        'Recovered Movie - badresp'
+      );
+    });
+    expect(screen.queryByTestId('error-message')).not.toBeInTheDocument();
+  });
+
+  it('shows error when initial search API fails and retry refetches', async () => {
+    mockSearchMovies.mockRejectedValueOnce(new Error('network error'));
+    renderWithRoute('/search?q=failinitial');
+    await waitFor(() => {
+      expect(screen.getByTestId('error-message')).toBeInTheDocument();
+    });
+    mockSearchMovies.mockResolvedValueOnce({
+      results: [makeMovie(5, 'After Retry')],
+      total_pages: 1,
+      total_results: 1,
+      page: 1,
+    } as any);
+    userEvent.click(screen.getByRole('button', { name: /Retry/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('movie-card')).toHaveTextContent(
+        'After Retry - failinitial'
+      );
+    });
+  });
+
+  it('loads more results when "Carregar mais resultados" clicked and appends', async () => {
+    mockSearchMovies.mockResolvedValueOnce({
+      results: [makeMovie(10, 'Page1 Movie')],
+      total_pages: 2,
+      total_results: 2,
+      page: 1,
+    } as any);
+    mockSearchMovies.mockResolvedValueOnce({
+      results: [makeMovie(11, 'Page2 Movie')],
+      total_pages: 2,
+      total_results: 2,
+      page: 2,
+    } as any);
+    renderWithRoute('/search?q=pagination');
+    await waitFor(() => {
+      expect(screen.getByText('1')).toBeInTheDocument();
+      expect(screen.getByText('resultado')).toBeInTheDocument();
+      expect(screen.getByText('encontrado')).toBeInTheDocument();
+      expect(screen.getByText('pagination')).toBeInTheDocument();
+    });
+    const loadMore = await screen.findByRole('button', {
+      name: /Carregar mais resultados/i,
+    });
+    expect(loadMore).toBeEnabled();
+    userEvent.click(loadMore);
+    await waitFor(() => {
+      const cards = screen.getAllByTestId('movie-card');
+      expect(cards.some((c) => c.textContent?.includes('Page1 Movie'))).toBe(
+        true
+      );
+      expect(cards.some((c) => c.textContent?.includes('Page2 Movie'))).toBe(
+        true
+      );
+    });
+  });
+
+  it('does not call load more when already at last page', async () => {
+    mockSearchMovies.mockResolvedValue({
+      results: [makeMovie(20, 'Only Page')],
+      total_pages: 1,
+      total_results: 1,
+      page: 1,
+    } as any);
+
+    renderWithRoute('/search?q=lastpage');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('movie-card')).toBeInTheDocument();
+    });
+
+    await waitFor(
+      () => {
+        const loadMoreButton = screen.queryByRole('button', {
+          name: /Carregar mais resultados/i,
+        });
+
+        expect(loadMoreButton).toBeNull();
+      },
+      { timeout: 3000 }
+    );
+  });
+
+  it('when load more fails, shows error and allows retry to reset to first page', async () => {
+    mockSearchMovies.mockResolvedValueOnce({
+      results: [makeMovie(30, 'First')],
+      total_pages: 2,
+      total_results: 2,
+      page: 1,
+    } as any);
+    mockSearchMovies.mockRejectedValueOnce(new Error('fail page 2'));
+    renderWithRoute('/search?q=loadmorefail');
+    await waitFor(() => {
+      expect(screen.getByTestId('movie-card')).toHaveTextContent(
+        'First - loadmorefail'
+      );
+    });
+    const loadMore = await screen.findByRole('button', {
+      name: /Carregar mais resultados/i,
+    });
+    userEvent.click(loadMore);
+    await waitFor(() => {
+      expect(screen.getByTestId('error-message')).toBeInTheDocument();
+    });
+    mockSearchMovies.mockResolvedValueOnce({
+      results: [makeMovie(31, 'After Retry First')],
+      total_pages: 1,
+      total_results: 1,
+      page: 1,
+    } as any);
+    userEvent.click(screen.getByRole('button', { name: /Retry/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('movie-card')).toHaveTextContent(
+        'After Retry First - loadmorefail'
+      );
+      expect(
+        screen.queryByRole('button', {
+          name: /Carregar mais resultados/i,
+        })
+      ).toBeNull();
+    });
+  });
+});

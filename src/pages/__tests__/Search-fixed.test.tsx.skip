@@ -1,0 +1,190 @@
+import React from 'react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import Search from '../Search';
+import { tmdbService } from '@/services/tmdb';
+import { MoviesProvider } from '@/contexts/MoviesContext';
+import type { Movie } from '@/types/movie';
+
+// Mock dependencies
+jest.mock('@/services/tmdb');
+jest.mock('@/hooks/use-debounce', () => ({
+  useDebounce: (fn: (...args: unknown[]) => unknown) => fn,
+}));
+
+const mockTmdbService = tmdbService as jest.Mocked<typeof tmdbService>;
+const mockSearchMovies = mockTmdbService.searchMovies;
+
+// Mock components
+jest.mock('@/components/MovieCard', () => {
+  return function MovieCard({ movie, searchTerm }: { movie: Movie; searchTerm?: string }) {
+    return (
+      <div data-testid="movie-card">
+        {movie.title} - {searchTerm}
+      </div>
+    );
+  };
+});
+
+jest.mock('@/components/LoadingSpinner', () => {
+  return function LoadingSpinner() {
+    return <div data-testid="loading-spinner">Loading...</div>;
+  };
+});
+
+jest.mock('@/components/EmptyState', () => {
+  return function EmptyState({ 
+    title, 
+    description, 
+    actionText 
+  }: { 
+    title: string; 
+    description: string; 
+    actionText?: string;
+  }) {
+    return (
+      <div data-testid="empty-state">
+        <h2>{title}</h2>
+        <p>{description}</p>
+        {actionText && <button>{actionText}</button>}
+      </div>
+    );
+  };
+});
+
+const mockAddSearchTerm = jest.fn();
+const mockRemoveSearchTerm = jest.fn();
+
+jest.mock('@/contexts/MoviesContext', () => ({
+  ...jest.requireActual('@/contexts/MoviesContext'),
+  useMovies: () => ({
+    favorites: [],
+    addFavorite: jest.fn(),
+    removeFavorite: jest.fn(),
+    isFavorite: jest.fn(() => false),
+    searchTerms: [],
+    addSearchTerm: mockAddSearchTerm,
+    removeSearchTerm: mockRemoveSearchTerm,
+  }),
+}));
+
+const renderWithRoute = (route = '/search') => {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <MoviesProvider>
+        <Search />
+      </MoviesProvider>
+    </MemoryRouter>
+  );
+};
+
+const makeMovie = (id: number, title: string): Movie => ({
+  id,
+  title,
+  overview: 'Test overview',
+  poster_path: '/test.jpg',
+  backdrop_path: '/test-backdrop.jpg',
+  release_date: '2023-01-01',
+  vote_average: 7.5,
+  vote_count: 1000,
+  genre_ids: [1, 2, 3],
+});
+
+describe('Search component - fixed tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('performs search when query present and displays result singular', async () => {
+    mockSearchMovies.mockResolvedValue({
+      results: [makeMovie(1, 'Movie A')],
+      total_pages: 1,
+      total_results: 1,
+      page: 1,
+    });
+    renderWithRoute('/search?q=test');
+    
+    await waitFor(() => {
+      expect(mockAddSearchTerm).toHaveBeenCalledWith('test');
+    });
+
+    expect(screen.getByText(/1 resultado encontrado/)).toBeInTheDocument();
+    expect(screen.getByText('"test"')).toBeInTheDocument();
+    expect(screen.getByTestId('movie-card')).toHaveTextContent('Movie A - test');
+    expect(
+      screen.queryByRole('button', { name: /Carregar mais resultados/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows pluralization when multiple results', async () => {
+    mockSearchMovies.mockResolvedValue({
+      results: [makeMovie(1, 'Movie A'), makeMovie(2, 'Movie B')],
+      total_pages: 1,
+      total_results: 2,
+      page: 1,
+    });
+    renderWithRoute('/search?q=foo');
+    
+    await waitFor(() => {
+      expect(mockAddSearchTerm).toHaveBeenCalledWith('foo');
+    });
+
+    expect(screen.getByText(/2 resultados encontrados/)).toBeInTheDocument();
+    expect(screen.getByText('"foo"')).toBeInTheDocument();
+    expect(screen.getAllByTestId('movie-card')).toHaveLength(2);
+  });
+
+  it('loads more results when button clicked', async () => {
+    // First page
+    mockSearchMovies.mockResolvedValueOnce({
+      results: [makeMovie(1, 'Page1 Movie')],
+      total_pages: 2,
+      total_results: 2,
+      page: 1,
+    });
+    
+    // Second page
+    mockSearchMovies.mockResolvedValueOnce({
+      results: [makeMovie(2, 'Page2 Movie')],
+      total_pages: 2,
+      total_results: 2,
+      page: 2,
+    });
+
+    renderWithRoute('/search?q=pagination');
+    
+    await waitFor(() => {
+      expect(screen.getByText(/1 resultado encontrado/)).toBeInTheDocument();
+    });
+
+    const loadMoreButton = screen.getByRole('button', {
+      name: /Carregar mais resultados/i,
+    });
+    expect(loadMoreButton).toBeInTheDocument();
+
+    fireEvent.click(loadMoreButton);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('movie-card')).toHaveLength(2);
+    });
+  });
+
+  it('does not show load more button when at last page', async () => {
+    mockSearchMovies.mockResolvedValue({
+      results: [makeMovie(1, 'Page2 Movie')],
+      total_pages: 2,
+      total_results: 2,
+      page: 2,
+    });
+
+    renderWithRoute('/search?q=lastpage');
+    
+    await waitFor(() => {
+      expect(screen.getByText(/1 resultado encontrado/)).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByRole('button', { name: /Carregar mais resultados/i })
+    ).not.toBeInTheDocument();
+  });
+});

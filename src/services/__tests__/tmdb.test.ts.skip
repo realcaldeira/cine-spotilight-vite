@@ -1,0 +1,236 @@
+/**
+ * @jest-environment jsdom
+ */
+
+import {
+  tmdbService,
+  __setApiKeyForTest,
+  __clearApiKeyForTest,
+} from '@/services/tmdb';
+import type { MovieResponse, MovieDetails } from '@/types/movie';
+
+const ORIGINAL_FETCH = global.fetch;
+
+describe('TMDBService full branch coverage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (global as any).alert = jest.fn();
+    jest.useRealTimers();
+    __setApiKeyForTest('valid-key');
+  });
+
+  afterAll(() => {
+    global.fetch = ORIGINAL_FETCH;
+  });
+
+  it('popular movies success with headers and correct URL with & when query param exists', async () => {
+    const mockResponse: MovieResponse = {
+      results: [
+        {
+          id: 1,
+          title: 'Popular Movie',
+          overview: 'Overview',
+          poster_path: '/poster.jpg',
+          release_date: '2024-01-01',
+          vote_average: 7.2,
+        },
+      ],
+      total_pages: 1,
+      page: 1,
+      total_results: 1,
+    };
+
+    const mockFetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    } as unknown as Response);
+    (global as any).fetch = mockFetch;
+
+    const result = await tmdbService.getPopularMovies(1);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/movie/popular?page=1&api_key=valid-key'),
+      expect.objectContaining({
+        signal: expect.any(Object),
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        }),
+      })
+    );
+    expect(result).toEqual(mockResponse);
+  });
+
+  it('searchMovies encodes query and succeeds', async () => {
+    const mockResponse: MovieResponse = {
+      results: [],
+      total_pages: 1,
+      page: 2,
+      total_results: 0,
+    };
+
+    const mockFetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    } as unknown as Response);
+    (global as any).fetch = mockFetch;
+
+    const query = 'Test & Movie';
+    const result = await tmdbService.searchMovies(query, 2);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `/search/movie?query=${encodeURIComponent(query)}&page=2&api_key=valid-key`
+      ),
+      expect.any(Object)
+    );
+    expect(result).toEqual(mockResponse);
+  });
+
+  it('getMovieDetails builds URL with ? and returns details', async () => {
+    const mockDetails: MovieDetails = {
+      id: 123,
+      title: 'Detail Movie',
+      overview: 'Some overview',
+      poster_path: '/detail.jpg',
+      release_date: '2023-06-01',
+      vote_average: 8.1,
+      runtime: 100,
+      genres: [{ id: 1, name: 'Drama' }],
+    } as unknown as MovieDetails;
+
+    const mockFetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockDetails,
+    } as unknown as Response);
+    (global as any).fetch = mockFetch;
+
+    const result = await tmdbService.getMovieDetails(123);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/movie/123?api_key=valid-key'),
+      expect.any(Object)
+    );
+    expect(result).toEqual(mockDetails);
+  });
+
+  it('throws when internal API_KEY is cleared (request guard)', async () => {
+    __clearApiKeyForTest();
+    await expect(tmdbService.getPopularMovies()).rejects.toThrow(
+      /Chave da API TMDB não configurada/
+    );
+  });
+
+  it('handles HTTP error 404', async () => {
+    const mockFetch = jest.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+    } as unknown as Response);
+    (global as any).fetch = mockFetch;
+
+    await expect(tmdbService.getPopularMovies()).rejects.toThrow(
+      'TMDB API Error: 404 Not Found'
+    );
+  });
+
+  it('handles 401 with the specific invalid key flow and triggers alert', async () => {
+    const mockFetch = jest.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+    } as unknown as Response);
+    (global as any).fetch = mockFetch;
+
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    await expect(tmdbService.getPopularMovies()).rejects.toThrow(
+      /ERRO 401 - CHAVE DA API INVÁLIDA/
+    );
+    expect((global as any).alert).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('handles empty response body', async () => {
+    const mockFetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => null,
+    } as unknown as Response);
+    (global as any).fetch = mockFetch;
+
+    await expect(tmdbService.getPopularMovies()).rejects.toThrow(
+      'Empty response from TMDB API'
+    );
+  });
+
+  it('handles invalid JSON thrown during json()', async () => {
+    const mockFetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => {
+        throw new Error('Invalid JSON');
+      },
+    } as unknown as Response);
+    (global as any).fetch = mockFetch;
+
+    await expect(tmdbService.getPopularMovies()).rejects.toThrow(
+      'Invalid JSON'
+    );
+  });
+
+  it('handles network error rejection', async () => {
+    const mockFetch = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('Network error'));
+    (global as any).fetch = mockFetch;
+
+    await expect(tmdbService.getPopularMovies()).rejects.toThrow(
+      'Network error'
+    );
+  });
+
+  it('handles abort timeout path', async () => {
+    jest.useFakeTimers();
+    const hangingFetch = jest.fn((url: string, options: any) => {
+      return new Promise((_res, rej) => {
+        const signal = options?.signal;
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            const err = new Error('Aborted');
+            (err as any).name = 'AbortError';
+            rej(err);
+          });
+        }
+      });
+    });
+    (global as any).fetch = hangingFetch;
+
+    const promise = tmdbService.getPopularMovies();
+    jest.advanceTimersByTime(10000);
+    await expect(promise).rejects.toThrow(/Request timeout/);
+    jest.useRealTimers();
+  });
+
+  describe('image URL helpers', () => {
+    it('poster default size w300', () => {
+      const url = tmdbService.getPosterUrl('/test.jpg');
+      expect(url).toBe('https://image.tmdb.org/t/p/w300/test.jpg');
+    });
+
+    it('poster null gives placeholder', () => {
+      expect(tmdbService.getPosterUrl(null)).toBe('/placeholder.svg');
+    });
+
+    it('backdrop original', () => {
+      const url = tmdbService.getBackdropUrl('/backdrop.jpg');
+      expect(url).toBe('https://image.tmdb.org/t/p/original/backdrop.jpg');
+    });
+
+    it('backdrop null placeholder', () => {
+      expect(tmdbService.getBackdropUrl(null)).toBe('/placeholder.svg');
+    });
+
+    it('custom size image URL', () => {
+      const url = tmdbService.getImageUrl('/custom.jpg', 'w500');
+      expect(url).toBe('https://image.tmdb.org/t/p/w500/custom.jpg');
+    });
+  });
+});

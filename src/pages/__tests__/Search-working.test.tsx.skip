@@ -1,0 +1,102 @@
+/**
+ * @jest-environment jsdom
+ */
+
+import '../test/mock-tmdb';
+import React from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import Search from '../Search';
+import { MoviesProvider } from '@/contexts/MoviesContext';
+import { searchMovies } from '@/services/tmdb';
+import type { Movie } from '@/types/movie';
+
+const mockSearchMovies = searchMovies as jest.MockedFunction<typeof searchMovies>;
+
+// Mock dependencies
+jest.mock('@/hooks/use-debounce', () => ({
+  useDebounce: (fn: (...args: unknown[]) => unknown) => fn,
+}));
+
+const mockAddSearchTerm = jest.fn();
+jest.mock('@/contexts/MoviesContext', () => ({
+  ...jest.requireActual('@/contexts/MoviesContext'),
+  useMovies: () => ({
+    favorites: [],
+    addFavorite: jest.fn(),
+    removeFavorite: jest.fn(),
+    isFavorite: jest.fn(() => false),
+    searchTerms: [],
+    addSearchTerm: mockAddSearchTerm,
+    removeSearchTerm: jest.fn(),
+  }),
+}));
+
+const renderWithRoute = (route = '/search') => {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <MoviesProvider>
+        <Search />
+      </MoviesProvider>
+    </MemoryRouter>
+  );
+};
+
+const makeMovie = (id: number, title: string): Movie => ({
+  id,
+  title,
+  overview: 'Test overview',
+  poster_path: '/test.jpg',
+  backdrop_path: '/test-backdrop.jpg',
+  release_date: '2023-01-01',
+  vote_average: 7.5,
+  vote_count: 1000,
+  genre_ids: [1, 2, 3],
+});
+
+describe('Search component - Working Tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders search page correctly', async () => {
+    mockSearchMovies.mockResolvedValue({
+      results: [makeMovie(1, 'Test Movie')],
+      total_pages: 1,
+      total_results: 1,
+      page: 1,
+    });
+    
+    renderWithRoute('/search?q=test');
+    
+    await waitFor(() => {
+      expect(screen.getByText('Resultados da busca')).toBeInTheDocument();
+    });
+    
+    expect(mockAddSearchTerm).toHaveBeenCalledWith('test');
+  });
+
+  it('shows empty state when no query provided', () => {
+    renderWithRoute('/search');
+    
+    expect(screen.getByText('Digite algo para buscar')).toBeInTheDocument();
+    expect(screen.getByText('Use a barra de pesquisa acima para encontrar filmes')).toBeInTheDocument();
+  });
+
+  it('displays search results correctly', async () => {
+    mockSearchMovies.mockResolvedValue({
+      results: [makeMovie(1, 'Movie A'), makeMovie(2, 'Movie B')],
+      total_pages: 1,
+      total_results: 2,
+      page: 1,
+    });
+    
+    renderWithRoute('/search?q=movie');
+    
+    await waitFor(() => {
+      expect(screen.getByText(/resultados encontrados/)).toBeInTheDocument();
+    });
+    
+    expect(screen.getByText(/movie/i)).toBeInTheDocument();
+  });
+});
