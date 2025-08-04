@@ -18,7 +18,13 @@ module.exports = {
     '!**/__tests__/**/*.working.*',
     '!**/__tests__/**/*.corrected.*',
   ],
-  collectCoverageFrom: ['src/App.tsx', 'src/lib/**/*.{ts,tsx}'],
+  collectCoverageFrom: [
+    'src/components/**/*.{ts,tsx}',
+    'src/contexts/**/*.{ts,tsx}',
+    'src/lib/**/*.{ts,tsx}',
+    '!src/components/ui/toaster.tsx',
+    '!src/components/ui/sidebar.tsx',
+  ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   transform: {
