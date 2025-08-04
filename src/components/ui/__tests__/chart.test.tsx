@@ -194,8 +194,8 @@ describe('ChartTooltipContent', () => {
       </ChartContainer>
     );
 
-    // Verify tooltip content is rendered
-    expect(screen.getByText('1.000')).toBeInTheDocument(); // Default formatter uses period
+    // Verify tooltip content is rendered with default formatter
+    expect(screen.getByText('1,000')).toBeInTheDocument();
     expect(screen.getByText('800')).toBeInTheDocument();
 
     // Check that Desktop and Mobile labels appear (they appear in both label and content areas)

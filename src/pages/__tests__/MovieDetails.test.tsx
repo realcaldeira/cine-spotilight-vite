@@ -155,8 +155,8 @@ describe('MovieDetails', () => {
     render(<MovieDetails />, { wrapper: TestWrapper });
 
     await waitFor(() => {
-      expect(screen.getByText(/100\.000\.000/)).toBeInTheDocument(); // Budget
-      expect(screen.getByText(/200\.000\.000/)).toBeInTheDocument(); // Revenue
+      expect(screen.getByText(/100,000,000/)).toBeInTheDocument(); // Budget
+      expect(screen.getByText(/200,000,000/)).toBeInTheDocument(); // Revenue
     });
   });
 

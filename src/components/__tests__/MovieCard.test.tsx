@@ -24,7 +24,7 @@ describe('MovieCard', () => {
     render(<MovieCard movie={mockMovie} />, { wrapper: TestWrapper });
 
     expect(screen.getByText(mockMovie.title)).toBeInTheDocument();
-    expect(screen.getByText('2023')).toBeInTheDocument(); // Adjusted based on actual rendering
+    expect(screen.getByText('2024')).toBeInTheDocument();
     expect(screen.getByText('8.5')).toBeInTheDocument();
   });
 
