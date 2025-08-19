@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
-import { Calendar, Clock, Star, Heart } from 'lucide-react';
-import { MovieDetails as MovieDetailsType } from '@/types/movie';
-import { tmdbService } from '@/services/tmdb';
-import { useMovies } from '@/contexts/MoviesContext';
-import LoadingSpinner from '@/components/LoadingSpinner';
-import ErrorMessage from '@/components/ErrorMessage';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import React, { useState, useEffect } from "react";
+import { useParams, Navigate } from "react-router-dom";
+import { Calendar, Clock, Star, Heart } from "lucide-react";
+import { MovieDetails as MovieDetailsType } from "@/types/movie";
+import { tmdbService } from "@/services/tmdb";
+import { useMovies } from "@/contexts/MoviesContext";
+import LoadingSpinner from "@/components/LoadingSpinner";
+import ErrorMessage from "@/components/ErrorMessage";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import StartRating from "@/components/StartRating";
 
 export default function MovieDetails() {
   const { id } = useParams<{ id: string }>();
@@ -16,7 +17,7 @@ export default function MovieDetails() {
   const [error, setError] = useState<string | null>(null);
   const { addFavorite, removeFavorite, isFavorite } = useMovies();
 
-  const movieId = parseInt(id || '0');
+  const movieId = parseInt(id || "0");
   const favorite = isFavorite(movieId);
 
   useEffect(() => {
@@ -29,8 +30,8 @@ export default function MovieDetails() {
         const movieDetails = await tmdbService.getMovieDetails(movieId);
         setMovie(movieDetails);
       } catch (err) {
-        setError('Erro ao carregar detalhes do filme. Tente novamente.');
-        console.error('Error fetching movie details:', err);
+        setError("Erro ao carregar detalhes do filme. Tente novamente.");
+        console.error("Error fetching movie details:", err);
       } finally {
         setLoading(false);
       }
@@ -72,7 +73,7 @@ export default function MovieDetails() {
       <div className="min-h-screen bg-background pt-20">
         <div className="container mx-auto px-4 py-8">
           <ErrorMessage
-            message={error || 'Filme não encontrado'}
+            message={error || "Filme não encontrado"}
             onRetry={error ? handleRetry : undefined}
           />
         </div>
@@ -87,10 +88,10 @@ export default function MovieDetails() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+    return new Date(dateString).toLocaleDateString("pt-BR", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
   };
 
@@ -132,16 +133,17 @@ export default function MovieDetails() {
 
               <Button
                 onClick={handleFavoriteClick}
-                variant={favorite ? 'default' : 'outline'}
+                variant={favorite ? "default" : "outline"}
                 className={`${
                   favorite
-                    ? 'bg-netflix-red hover:bg-netflix-red/90'
-                    : 'border-netflix-red text-netflix-red hover:bg-netflix-red hover:text-white'
-                } min-w-fit`}>
+                    ? "bg-netflix-red hover:bg-netflix-red/90"
+                    : "border-netflix-red text-netflix-red hover:bg-netflix-red hover:text-white"
+                } min-w-fit`}
+              >
                 <Heart
-                  className={`mr-2 h-4 w-4 ${favorite ? 'fill-current' : ''}`}
+                  className={`mr-2 h-4 w-4 ${favorite ? "fill-current" : ""}`}
                 />
-                {favorite ? 'Remover dos Favoritos' : 'Adicionar aos Favoritos'}
+                {favorite ? "Remover dos Favoritos" : "Adicionar aos Favoritos"}
               </Button>
             </div>
 
@@ -158,13 +160,14 @@ export default function MovieDetails() {
                 </div>
               )}
 
+              <StartRating average={movie.vote_average} size="sm" />
               <div className="flex items-center gap-1">
-                <Star className="h-4 w-4 text-yellow-400 fill-current" />
+                {/* <Star className="h-4 w-4 text-yellow-400 fill-current" /> */}
                 <span className="font-medium text-foreground">
                   {movie.vote_average !== null &&
                   movie.vote_average !== undefined
                     ? `${movie.vote_average.toFixed(1)}/10`
-                    : 'N/A'}
+                    : "N/A"}
                 </span>
                 <span>({movie.vote_count.toLocaleString()} votos)</span>
               </div>
@@ -176,7 +179,8 @@ export default function MovieDetails() {
                   <Badge
                     key={genre.id}
                     variant="secondary"
-                    className="bg-secondary text-secondary-foreground">
+                    className="bg-secondary text-secondary-foreground"
+                  >
                     {genre.name}
                   </Badge>
                 ))}
@@ -188,7 +192,7 @@ export default function MovieDetails() {
                 Sinopse
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                {movie.overview || 'Sinopse não disponível.'}
+                {movie.overview || "Sinopse não disponível."}
               </p>
             </div>
 
@@ -229,7 +233,7 @@ export default function MovieDetails() {
                     <p className="text-muted-foreground">
                       {movie.production_companies
                         .map((company) => company.name)
-                        .join(', ')}
+                        .join(", ")}
                     </p>
                   </div>
                 )}
